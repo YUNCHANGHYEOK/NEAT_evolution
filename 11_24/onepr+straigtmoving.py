@@ -9,8 +9,8 @@ WIN_WIDTH = 800
 WIN_HEIGHT = 600
 GEN = 0 
 FPS = 60 
-MAX_GEN_TIME = 1800 # 30초
-NUM_PREDATORS = 2 
+MAX_GEN_TIME = 1200 # 20초 (사용자 설정 유지)
+NUM_PREDATORS = 1 # 포식자 1마리
 NUM_FOODS = 2 
 
 class Food:
@@ -26,34 +26,27 @@ class Predator:
     def __init__(self):
         self.x = random.randint(50, WIN_WIDTH - 50)
         self.y = random.randint(50, WIN_HEIGHT - 50)
-        self.vel = 5 # [최종 속도] 생명체와 동일한 속도(5)
-        self.color = (0, 0, 255) # 파란색 포식자
+        self.vel = 5 
+        self.color = (0, 0, 255)
         self.rad = 15
         
-        # 이동 상태 관리 변수 (안정적인 움직임)
         self.direction = random.choice([(1, 0), (-1, 0), (0, 1), (0, -1)])
         self.change_timer = random.randint(30, 90)
 
     def move(self):
         self.change_timer -= 1
         
-        # 경계 충돌 확인
         hit_boundary = False
-        if self.x <= self.rad or self.x >= WIN_WIDTH - self.rad:
-            hit_boundary = True
-        if self.y <= self.rad or self.y >= WIN_HEIGHT - self.rad:
-            hit_boundary = True
+        if self.x <= self.rad or self.x >= WIN_WIDTH - self.rad: hit_boundary = True
+        if self.y <= self.rad or self.y >= WIN_HEIGHT - self.rad: hit_boundary = True
 
         if hit_boundary or self.change_timer <= 0:
-            # 새로운 방향 선택
             self.direction = random.choice([(1, 0), (-1, 0), (0, 1), (0, -1)])
             self.change_timer = random.randint(30, 90)
         
-        # 이동 적용
         self.x += self.direction[0] * self.vel
         self.y += self.direction[1] * self.vel
 
-        # 위치 보정
         self.x = max(self.rad, min(self.x, WIN_WIDTH - self.rad))
         self.y = max(self.rad, min(self.y, WIN_HEIGHT - self.rad))
 
@@ -66,9 +59,10 @@ class Creature:
         self.y = WIN_HEIGHT / 2
         self.vel = 5
         self.rect = pygame.Rect(self.x, self.y, 20, 20)
-        self.life = 600  # 초기 수명 (10초)
+        self.life = 600
         
     def move(self, output):
+        # 단순 상하좌우 이동 로직
         if output[0] > 0.5: self.y -= self.vel
         if output[1] > 0.5: self.y += self.vel
         if output[2] > 0.5: self.x -= self.vel
@@ -83,6 +77,7 @@ class Creature:
         green_intensity = int(255 * life_ratio)
         current_color = (0, green_intensity, 0)
         pygame.draw.rect(win, current_color, self.rect)
+
 
 def eval_genomes(genomes, config):
     global GEN
@@ -127,9 +122,9 @@ def eval_genomes(genomes, config):
         for i in reversed(range(len(creatures))):
             creature = creatures[i]
             
-            # --- 1. 신경망 입력 계산 (총 8개 입력: F1, F2, P1, P2) ---
+            # --- 1. 신경망 입력 계산 (총 4개 입력: F1_dx, F1_dy, P1_dx, P1_dy) ---
             
-            # A. 먹이 2개 입력
+            # A. 가장 가까운 먹이 (F1) 정보
             food_distances = []
             for food_item in foods:
                 dist = math.sqrt((food_item.x - creature.x)**2 + (food_item.y - creature.y)**2)
@@ -137,46 +132,38 @@ def eval_genomes(genomes, config):
             food_distances.sort(key=lambda x: x[0])
             
             food1 = food_distances[0][1]
-            food2 = food_distances[1][1] 
+            
+            dx_f1 = food1.x - creature.x # x좌표 차이
+            dy_f1 = food1.y - creature.y # y좌표 차이
 
-            dx_f1 = food1.x - creature.x
-            dy_f1 = food1.y - creature.y
-            
-            dx_f2 = food2.x - creature.x
-            dy_f2 = food2.y - creature.y
-            
-            # B. 포식자 2마리 입력
+            # B. 가장 가까운 포식자 (P1) 정보
             predator_distances = []
             for predator in predators:
                 dist = math.sqrt((predator.x - creature.x)**2 + (predator.y - creature.y)**2)
                 predator_distances.append((dist, predator))
-            
             predator_distances.sort(key=lambda x: x[0])
             
-            predator1 = predator_distances[0][1] 
-            predator2 = predator_distances[1][1] 
-
-            dx_p1 = predator1.x - creature.x
-            dy_p1 = predator1.y - creature.y
+            predator1 = predator_distances[0][1]
             
-            dx_p2 = predator2.x - creature.x
-            dy_p2 = predator2.y - creature.y
-                
-            inputs = (dx_f1, dy_f1, dx_f2, dy_f2, dx_p1, dy_p1, dx_p2, dy_p2)
+            dx_p1 = predator1.x - creature.x # x좌표 차이
+            dy_p1 = predator1.y - creature.y # y좌표 차이
+            
+            # 최종 입력: (F1_dx, F1_dy, P1_dx, P1_dy)
+            inputs = (dx_f1, dy_f1, dx_p1, dy_p1)
             
             output = nets[i].activate(inputs)
             creature.move(output)
             
             # 2. 수명 감소 및 사망 판정
             creature.life -= 1 
-            ge[i].fitness += 0.1 # [수정] 생존 보너스 증가 (0.05 -> 0.1)
+            ge[i].fitness += 0.01 # 생존 보너스 대폭 감소 (벽 문제 해결 핵심)
             
             # 포식자 충돌 사망 판정 (가장 가까운 포식자 P1과만 체크)
             if predator1:
                 predator_distance = math.sqrt((creature.x - predator1.x)**2 + (creature.y - predator1.y)**2)
                 if predator_distance < creature.rect.width / 2 + predator1.rad: 
                     creature.life = 0 
-                    ge[i].fitness -= 20 # [수정] 포식자 페널티 완화 (-30 -> -20)
+                    ge[i].fitness -= 20 
             
             if creature.life <= 0:
                 creatures.pop(i)
@@ -187,10 +174,10 @@ def eval_genomes(genomes, config):
             # 3. 먹이를 먹었는지 판별 
             for j in reversed(range(len(foods))):
                 food_item = foods[j]
-                distance = math.sqrt((creature.x - food_item.x)**2 + (creature.y - food_item.y)**2)
+                distance = math.sqrt((creature.x - food_item.x)**2 + (food_item.y - creature.y)**2)
                 
                 if distance < 20:
-                    ge[i].fitness += 100 # [수정] 먹이 보상 강화 (50 -> 100)
+                    ge[i].fitness += 100 
                     creature.life += 600 
                     
                     foods.pop(j)

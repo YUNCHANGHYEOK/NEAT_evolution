@@ -112,7 +112,7 @@ def eval_genomes(genomes, config):
             # 5. 먹이를 먹었는지 판별
             distance = math.sqrt((creature.x - food.x)**2 + (creature.y - food.y)**2)
             if distance < 20:
-                ge[i].fitness += 10 # 먹으면 큰 점수
+                ge[i].fitness += 20 # 먹으면 큰 점수
                 creature.life += 300 # 먹이를 먹으면 수명 5초 추가
                 food = Food() # 먹이 위치 이동 (새로운 목표 생성)
         
